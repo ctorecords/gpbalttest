@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Поиск по email</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 2rem;
+      background: #f9f9f9;
+      color: #333;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    form {
+      position: relative;
+      max-width: 400px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    #suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      border-top: none;
+      z-index: 10;
+      display: none;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    #suggestions div {
+      padding: 0.5rem;
+      cursor: pointer;
+    }
+
+    #suggestions div.selected {
+      background-color: #d0e0f0;
+      font-weight: bold;
+    }
+
+    mark {
+      background-color: #ffea80;
+      padding: 0 2px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f0f0f0;
+      z-index: 1;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    td[data-key="created"] {
+        white-space: nowrap;
+    }
+
+    .notice-row td {
+      font-style: italic;
+      color: #555;
+      text-align: center;
+    }
+
+    .table-wrapper {
+      max-height: 80vh; /* настраиваемая высота прокрутки */
+      overflow: auto;
+      margin-top: 2rem;
+      border: 1px solid #ccc;
+      background: white;
+    }
+
+    .notice-row {
+      position: sticky;
+      bottom: 0;
+      background: #fff8e1;
+      z-index: 2;
+    }
+
+    .notice-row td {
+      font-style: italic;
+      color: #555;
+      text-align: center;
+      padding: 0.75rem;
+    }
+    td[data-key="str"] {
+      position: relative;
+    }
+
+    td[data-key="str"] .meta {
+      position: absolute;
+      top: 0.25rem;
+      right: 0.5rem;
+      font-size: 0.65rem;
+      color: #f0f0f0;
+      background-color: #888;
+      padding: 0 0.4em;
+      border-radius: 4px;
+      font-style: normal;
+      opacity: 0.85;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+  </style>
+</head>
+<body>
+  <h1>Поиск по email</h1>
+
+  <form onsubmit="submitForm(event)" autocomplete="off">
+    <label style="display:block; margin: 0.5rem 0;">
+      <input type="checkbox" id="include-bounce"> Включить строки bounce
+    </label>
+    <input type="text" name="s" placeholder="Введите email" oninput="suggest(this)" onkeydown="handleKey(event)" autofocus>
+    <div id="suggestions"></div>
+  </form>
+
+  <div class="table-wrapper">
+  <table id="results"></table>
+  </div>
+
+
+  <script>
+    let debounceTimer;
+    let selectedIndex = -1;
+    let lastQuery = "";
+
+    const input = document.querySelector('input[name="s"]');
+    const suggestionsBox = document.getElementById('suggestions');
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        suggestionsBox.style.display = 'none';
+        selectedIndex = -1;
+      }, 200);
+    });
+
+    input.addEventListener('focus', () => {
+      if (input.value.trim().length >= 3) suggest(input);
+    });
+
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function highlight(text, query) {
+      const regex = new RegExp(escapeRegExp(query), 'gi');
+      return text.replace(regex, m => `<mark>${m}</mark>`);
+    }
+
+    async function suggest(inputEl) {
+      const query = inputEl.value.trim();
+      if (query.length < 3) {
+        suggestionsBox.style.display = 'none';
+        return;
+      }
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(async () => {
+        const res = await fetch('/suggest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ s: query })
+        });
+        const data = await res.json();
+        suggestionsBox.innerHTML = '';
+        selectedIndex = -1;
+        lastQuery = query;
+
+        if (data.data?.length) {
+            data.data.forEach((item, i) => {
+            const div = document.createElement('div');
+            div.innerHTML = highlight(item.address, query);
+            div.dataset.index = i;
+            div.dataset.value = item.address;
+
+            div.onclick = () => {
+                inputEl.value = item.address;
+                suggestionsBox.style.display = 'none';
+                submitForm(null);
+            };
+            div.addEventListener('mouseenter', () => {
+                selectedIndex = i;
+                updateSuggestionHighlight();
+            });
+
+            div.addEventListener('mouseleave', () => {
+                selectedIndex = -1;
+                updateSuggestionHighlight();
+            });
+
+            suggestionsBox.appendChild(div);
+            });
+
+            suggestionsBox.style.display = 'block';
+        } else {
+          suggestionsBox.style.display = 'none';
+        }
+      }, 300);
+    }
+
+    function handleKey(event) {
+        const items = suggestionsBox.querySelectorAll('div');
+        if (!items.length || suggestionsBox.style.display === 'none') return;
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            selectedIndex = (selectedIndex + 1) % items.length;
+            updateSuggestionHighlight();
+            items[selectedIndex].scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+            updateSuggestionHighlight();
+            items[selectedIndex].scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'Enter') {
+            if (selectedIndex >= 0 && selectedIndex < items.length) {
+            event.preventDefault();
+            const chosen = items[selectedIndex].dataset.value;
+            input.value = chosen;
+            suggestionsBox.style.display = 'none';
+            submitForm(null);
+            }
+        }
+    }
+
+    function updateSuggestionHighlight() {
+        const items = suggestionsBox.querySelectorAll('div');
+        items.forEach((el, i) => {
+            el.classList.toggle('selected', i === selectedIndex);
+        });
+    }
+    async function submitForm(event) {
+      if (event) event.preventDefault();
+
+      const s = input.value.trim();
+      const includeBounce = document.getElementById('include-bounce').checked;
+      const res = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s, include_bounce: includeBounce ? 1 : 0 })
+      });
+
+      const json = await res.json();
+      const table = document.getElementById('results');
+      table.innerHTML = '';
+
+      if (!json.data || json.data.length === 0) {
+        table.innerHTML = '<tr><td colspan="2">Нет данных</td></tr>';
+        return;
+      }
+
+      const header = document.createElement('tr');
+      ['created', 'str'].forEach(key => {
+        const th = document.createElement('th');
+        th.textContent = key;
+        header.appendChild(th);
+      });
+      table.appendChild(header);
+
+      const regex = new RegExp(escapeRegExp(s), 'gi');
+
+      json.data.forEach(row => {
+        const tr = document.createElement('tr');
+        ['created', 'str'].forEach(key => {
+          const td = document.createElement('td');
+          td.dataset.key = key;
+          if (key === 'str' && s.length > 0) {
+            const m = row[key].match(/^(\S+) (<=|=>|\*\*|==|->)? ?<?([^>\s]+@[^>\:\s]+)?>?(.*?)$/);
+            if (m && m[3]) {
+              const [_, int_id, flag, email, other] = m;
+              const emailMatch = row[key].includes(`<${email}>`);
+              const highlightedEmail = email.toLowerCase() !== s.toLowerCase()
+                ? highlight(email, s)
+                : `<mark>${email}</mark>`;
+              let emailDisplay = (email.toLowerCase() !== s.toLowerCase())
+                ? `<a href="#" style="text-decoration: underline dotted;" onclick="searchEmail('${email}'); return false;">${highlightedEmail}</a>`
+                : highlightedEmail;
+              if (emailMatch) emailDisplay = `&lt;${emailDisplay}&gt;`;
+              td.innerHTML = `
+                <div class="meta">${row.t || ''}</div>
+                ${int_id} ${flag || ''} ${emailDisplay}${other}
+              `;
+
+            } else {
+              td.innerHTML = `
+                <div class="meta">${row.t || ''}</div>
+                ${highlight(row[key], s)}
+              `;
+
+            }
+          } else {
+            td.textContent = row[key];
+          }
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+
+        if (row.continue) {
+          const notice = document.createElement('tr');
+          notice.className = 'notice-row';
+          const td = document.createElement('td');
+          td.colSpan = 2;
+          td.textContent = 'Количество найденных строк превышает лимит ([%- data.max_results -%])';
+          notice.appendChild(td);
+          table.appendChild(notice);
+        }
+      });
+    }
+    function searchEmail(email) {
+      const inputEl = document.querySelector('input[name="s"]');
+      inputEl.value = email;
+      submitForm(null);
+    }
+    document.getElementById('include-bounce').addEventListener('change', () => {
+      const val = input.value.trim();
+      if (val.length > 0) {
+        submitForm(null);
+      }
+    });
+  </script>
+</body>
+</html>

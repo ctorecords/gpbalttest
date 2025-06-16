@@ -1,0 +1,44 @@
+---
+db:
+  clear_db_on_init: 1         # чистим БД перед тестом
+  clear_db_on_destroy: 1      # чистим БД после теста
+  model_type: SQLite3::Memory
+
+  # путь от файла конфига
+  schema_path: ../schema/SQLite3.sql
+  #path: ../temp/sqlite3.db
+  name: gpbexim
+
+xapian:
+  path: ../temp/xapian_tests  # путь от конфига
+  min: 3  # минимальное количество символов для N-грамм
+  max_results: 100
+  oid_start: 0
+  clear_db_on_init: 1     # чистим Xapian перед работой
+  clear_db_on_destroy: 1  # чистим Xapian после работы
+
+ui:
+  silent: 1
+  max_results: 6
+  server_port: 8080
+  server_host: "localhost"
+  template_path: 'templates/search.html'
+  
+parser:
+  max_chunks:  1048576  # 1024*1024
+  chunk_size: 10485760  # 1024*1024*10
+
+log:
+  use: json  # or 'json'
+  log4perl:
+    log4perl.rootLogger: INFO, Screen
+    log4perl.appender.Screen: Log::Log4perl::Appender::Screen
+    log4perl.appender.Screen.stderr: 1
+    log4perl.appender.Screen.layout: PatternLayout
+    log4perl.appender.Screen.layout.ConversionPattern: "[%d] [%p] %m%n"
+
+  log4perl_json:
+    log4perl.rootLogger: INFO, Screen
+    log4perl.appender.Screen: Log::Log4perl::Appender::Screen
+    log4perl.appender.Screen.stderr: 1
+    log4perl.appender.Screen.layout: GPBExim::Log::JSONLayout
